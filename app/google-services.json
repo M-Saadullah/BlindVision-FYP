@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "705265382365",
+    "project_id": "blindvision-c3681",
+    "storage_bucket": "blindvision-c3681.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:705265382365:android:a3682f93add45e46e47c34",
+        "android_client_info": {
+          "package_name": "com.example.tflitetest"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyA3JG6iLCQe5__-4wJbkd_6RnlpU8xVERk"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
