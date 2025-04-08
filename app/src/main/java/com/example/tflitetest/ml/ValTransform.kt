@@ -23,7 +23,7 @@ class ValTransform {
     private var pixelBuffer: IntArray? = null
     private var outputArray: ByteArray? = null
 
-    fun transform(bitmap: Bitmap, inputSize: IntArray): Triple<ByteArray, Int, Int> {
+    fun transform(bitmap: Bitmap, inputSize: IntArray): ByteArray{
         val targetH = inputSize[0]
         val targetW = inputSize[1]
 
@@ -66,7 +66,7 @@ class ValTransform {
         processPixels(pixelBuffer!!, outputArray!!, targetH, targetW)
 
         Log.i(loggerTag, "[transform] Final byteData shape: (3, $targetH, $targetW)")
-        return Triple(outputArray!!, targetH, targetW)
+        return outputArray!!
     }
 
     private fun processPixels(pixels: IntArray, output: ByteArray, height: Int, width: Int) {

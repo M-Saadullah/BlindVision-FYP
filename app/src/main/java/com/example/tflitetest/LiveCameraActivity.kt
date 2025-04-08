@@ -3,11 +3,8 @@ package com.example.tflitetest
 import android.Manifest
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.graphics.ImageFormat
 import android.graphics.Matrix
-import android.graphics.Rect
-import android.graphics.YuvImage
 import android.hardware.camera2.CameraAccessException
 import android.hardware.camera2.CameraCaptureSession
 import android.hardware.camera2.CameraCharacteristics
@@ -30,7 +27,6 @@ import org.tensorflow.lite.Interpreter
 import java.io.FileInputStream
 import java.nio.MappedByteBuffer
 import java.nio.channels.FileChannel
-import java.util.concurrent.ExecutorService
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.util.Size
@@ -38,7 +34,6 @@ import android.view.Surface
 import android.view.SurfaceHolder
 import android.view.SurfaceView
 import androidx.annotation.RequiresPermission
-import java.io.ByteArrayOutputStream
 import java.util.Locale
 import kotlin.math.roundToInt
 import kotlin.math.min
@@ -77,9 +72,8 @@ class LiveCameraActivity : ComponentActivity(),TextToSpeech.OnInitListener {
     private var isTofDepthDataReady = false
     private var regularBitmap: Bitmap? = null
     private var tofDepthData: ShortArray? = null
-    private val YUV_420_888 = ImageFormat.YUV_420_888
-    private val DEPTH16 = ImageFormat.DEPTH16
-    private val NV21 = ImageFormat.NV21
+
+
 
     private var isSpeechRecognitionComplete = false
     private var isListening = false
@@ -238,6 +232,8 @@ class LiveCameraActivity : ComponentActivity(),TextToSpeech.OnInitListener {
             CAMERA_PERMISSION_CODE
         )
     }
+
+
     @RequiresPermission(Manifest.permission.CAMERA)
     private fun setupCamera() {
         try {
@@ -246,7 +242,7 @@ class LiveCameraActivity : ComponentActivity(),TextToSpeech.OnInitListener {
                 val startTime = System.currentTimeMillis()
                 regularBitmap = bitmap
                 isRegularBitmapReady = true
-                tryRunYolox()
+                tryRunningYolox()
                 val endTime = System.currentTimeMillis()
                 val latency = endTime - startTime
                 Log.d("RegularCamera", "Bitmap processing latency: $latency ms")
@@ -258,7 +254,7 @@ class LiveCameraActivity : ComponentActivity(),TextToSpeech.OnInitListener {
                     val startTime = System.currentTimeMillis()
                     tofDepthData = depthData
                     isTofDepthDataReady = true
-                    tryRunYolox()
+                    tryRunningYolox()
                     val endTime = System.currentTimeMillis()
                     val latency = endTime - startTime
                     Log.d("TimeLog", "LiveCamera Activity: Depth data setup latency: $latency ms")
@@ -271,7 +267,7 @@ class LiveCameraActivity : ComponentActivity(),TextToSpeech.OnInitListener {
         }
     }
 
-    private fun tryRunYolox() {
+    private fun tryRunningYolox() {
         if (isRegularBitmapReady && regularBitmap != null) {
             // Log interval between inferences
             val currentTime = System.currentTimeMillis()
@@ -474,9 +470,9 @@ class LiveCameraActivity : ComponentActivity(),TextToSpeech.OnInitListener {
                 if (capabilities != null && capabilities.contains(CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES_DEPTH_OUTPUT)) {
                     Log.d("Camera", "Found ToF sensor with ID: $cameraId")
                     val configMap = characteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
-                    val depthSizes = configMap?.getOutputSizes(DEPTH16) // Use numeric constant
+                    val depthSizes = configMap?.getOutputSizes(ImageFormat.DEPTH16) // Use numeric constant
                     val selectedSize = depthSizes?.maxByOrNull { it.width * it.height } ?: Size(240, 180)
-                    tofImageReader = ImageReader.newInstance(selectedSize.width, selectedSize.height, DEPTH16, 2) // Use numeric constant
+                    tofImageReader = ImageReader.newInstance(selectedSize.width, selectedSize.height, ImageFormat.DEPTH16, 2) // Use numeric constant
                     tofImageReader.setOnImageAvailableListener({ reader ->
                         val image = reader.acquireLatestImage()
                         image?.let {
@@ -576,6 +572,7 @@ class LiveCameraActivity : ComponentActivity(),TextToSpeech.OnInitListener {
         targetWidth: Int,
         targetHeight: Int
     ): ShortArray {
+        val startTime = System.currentTimeMillis()
         val scaledData = ShortArray(targetWidth * targetHeight)
         val widthRatio = depthWidth.toFloat() / targetWidth.toFloat()
         val heightRatio = depthHeight.toFloat() / targetHeight.toFloat()
@@ -604,6 +601,8 @@ class LiveCameraActivity : ComponentActivity(),TextToSpeech.OnInitListener {
                 scaledData[y * targetWidth + x] = scaledValue.toShort()
             }
         }
+        val endTime = System.currentTimeMillis()
+        Log.d("TimeLog", "scaleDepthData latency: ${endTime - startTime} ms")
         return scaledData
     }
 

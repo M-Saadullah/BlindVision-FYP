@@ -57,11 +57,10 @@ class Predictor(
             "raw_img" to originalBitmap
         )
         val ratio = min(testSize[0].toFloat() / height, testSize[1].toFloat() / width)
-        Log.i(loggerTag, "[inference] Computed ratio (for post-scale boxes): $ratio")
         imgInfo["ratio"] = ratio
 
         val startPreprocessTime = System.nanoTime()
-        val (processedData, processedH, processedW) = preproc.transform(originalBitmap, testSize)
+        val processedData = preproc.transform(originalBitmap, testSize)
         val endTransformTime = System.nanoTime()
         val transformMs = (endTransformTime - startPreprocessTime) / 1e6
         Log.i(loggerTag, "[inference] ValTransform took $transformMs ms")
@@ -290,36 +289,50 @@ class Predictor(
         return finalOutput[0]
     }
 
-    /**
-     * Performs Non-Maximum Suppression (NMS) on a list of detections.
-     * Each detection is a FloatArray of length 8:
-     * [x1, y1, x2, y2, object_conf, class_conf, class_pred, overall_score].
-     * NMS is applied in a class-agnostic manner using overall_score.
-     */
+
     private fun nms(detections: List<FloatArray>, iouThreshold: Float): List<Int> {
-        // Create a mutable list of indices sorted by overall score (index 7) in descending order.
-        val indices = detections.indices.toMutableList()
-        indices.sortByDescending { detections[it][7] }
-        val keep = mutableListOf<Int>()
-        while (indices.isNotEmpty()) {
-            val i = indices.removeAt(0)
-            keep.add(i)
-            val iterator = indices.iterator()
-            while (iterator.hasNext()) {
-                val j = iterator.next()
-                if (iou(detections[i], detections[j]) > iouThreshold) {
-                    iterator.remove()
+        if (detections.isEmpty()) return emptyList()
+
+        // Pre-compute scores once instead of accessing them repeatedly
+        val scores = detections.mapIndexed { index, detection -> Pair(index, detection[7]) }
+
+        // Sort indices by score in descending order
+        val sortedIndices = scores.sortedByDescending { it.second }.map { it.first }
+
+        val keep = ArrayList<Int>(sortedIndices.size / 2) // Preallocate with estimated capacity
+        val remaining = BooleanArray(sortedIndices.size) { true }
+
+        for (i in sortedIndices.indices) {
+            val idx = sortedIndices[i]
+
+            // If this box was already removed, skip it
+            if (!remaining[i]) continue
+
+            // Add index to keep list
+            keep.add(idx)
+
+            val boxI = detections[idx]
+
+            // For all remaining boxes, check IoU and mark for removal if needed
+            for (j in i + 1 until sortedIndices.size) {
+                if (!remaining[j]) continue
+
+                val jdx = sortedIndices[j]
+                if (iou(boxI, detections[jdx]) > iouThreshold) {
+                    remaining[j] = false
                 }
             }
         }
+
         return keep
     }
 
+// Assuming your iou function is implemented elsewhere
     /**
      * Computes Intersection over Union (IoU) between two boxes.
      * Each box is a FloatArray with format [x1, y1, x2, y2, ...].
      */
-    private fun iou(box1: FloatArray, box2: FloatArray): Float {
+    private inline fun iou(box1: FloatArray, box2: FloatArray): Float {
         val x1 = maxOf(box1[0], box2[0])
         val y1 = maxOf(box1[1], box2[1])
         val x2 = minOf(box1[2], box2[2])
@@ -332,6 +345,10 @@ class Predictor(
         val unionArea = area1 + area2 - interArea
         return if (unionArea <= 0f) 0f else interArea / unionArea
     }
+
+
+
+
 }
 
 
