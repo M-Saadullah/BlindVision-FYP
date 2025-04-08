@@ -33,7 +33,15 @@ class Predictor(
     private val testSize = exp.testSize
     private val loggerTag = "Predictor"
     private val preproc = ValTransform()
-    // TODO: Deq
+
+
+
+
+
+
+
+
+
     fun inference(bitmap: Bitmap): Pair<Any?, Map<String, Any>> {
         Log.i(loggerTag, "=== Starting inference ===")
         Log.i(loggerTag, "[inference] Input type: Bitmap")
@@ -51,22 +59,39 @@ class Predictor(
         val ratio = min(testSize[0].toFloat() / height, testSize[1].toFloat() / width)
         Log.i(loggerTag, "[inference] Computed ratio (for post-scale boxes): $ratio")
         imgInfo["ratio"] = ratio
-        Log.i(loggerTag, "[inference] Passing image through ValTransform...")
+
+        val startPreprocessTime = System.nanoTime()
         val (processedData, processedH, processedW) = preproc.transform(originalBitmap, testSize)
-        Log.i(loggerTag, "[inference] Shape after ValTransform: (3, $processedH, $processedW)")
-        val inputBuffer = convertToByteBuffer(processedData, 1, 3, processedH, processedW)
+        val endTransformTime = System.nanoTime()
+        val transformMs = (endTransformTime - startPreprocessTime) / 1e6
+        Log.i(loggerTag, "[inference] ValTransform took $transformMs ms")
+
+        // Create ByteBuffer directly from ByteArray
+        val startBufferTime = System.nanoTime()
+        val inputBuffer = ByteBuffer.allocateDirect(processedData.size).order(ByteOrder.nativeOrder())
+        inputBuffer.put(processedData)
+        inputBuffer.rewind()
+        val endBufferTime = System.nanoTime()
+        val bufferMs = (endBufferTime - startBufferTime) / 1e6
+        Log.i(loggerTag, "[inference] ByteBuffer creation took $bufferMs ms")
         Log.i(loggerTag, "[inference] Created ByteBuffer for TFLite, capacity: ${inputBuffer.capacity()}")
-        val startTime = System.nanoTime()
+
+
+
+        // Measure TFLite inference time
+        val startInferenceTime = System.nanoTime()
         val outputShape = arrayOf(1, 3549, 85)
         val numOutputElements = outputShape[0] * outputShape[1] * outputShape[2]
         val outputBuffer = ByteBuffer.allocateDirect(numOutputElements).order(ByteOrder.nativeOrder())
         Log.i(loggerTag, "[inference] Running TFLite forward pass...")
-
-
         tflite.run(inputBuffer, outputBuffer)
-        val inferenceMs = (System.nanoTime() - startTime) / 1e6
+        val endInferenceTime = System.nanoTime()
+        val inferenceMs = (endInferenceTime - startInferenceTime) / 1e6
         Log.i(loggerTag, "[inference] TFLite forward pass took $inferenceMs ms")
         Log.i(loggerTag, "[inference] Model output shape: [${outputShape.joinToString(", ")}]")
+
+        // Measure postprocessing time
+        val startPostprocessTime = System.nanoTime()
         outputBuffer.rewind()
         val outputBytes = ByteArray(numOutputElements)
         outputBuffer.get(outputBytes)
@@ -76,11 +101,16 @@ class Predictor(
             Log.i(loggerTag, "[inference] Decoding model outputs with decoder...")
             decodedOutputs = decoder.decode(dequantizedOutput)
         }
-        // x,y,h,w,objectness,class_confidence,class_id , objectness*class_confidence -> score
         val finalOutputs = postprocess(decodedOutputs, numClasses, confThre, nmsThre)
+        val endPostprocessTime = System.nanoTime()
+        val postprocessMs = (endPostprocessTime - startPostprocessTime) / 1e6
+        Log.i(loggerTag, "[inference] Postprocessing took $postprocessMs ms")
         Log.i(loggerTag, "[inference] Finished postprocess. Final outputs obtained.")
+
         return Pair(finalOutputs, imgInfo)
     }
+
+
 
     fun visual(output: Any?, imgInfo: Map<String, Any>, clsConf: Float = 0.35f): Bitmap {
         val ratio = imgInfo["ratio"] as Float
