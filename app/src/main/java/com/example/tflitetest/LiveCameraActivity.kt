@@ -47,6 +47,9 @@ import android.os.Looper
 import android.speech.RecognizerIntent
 import org.tensorflow.lite.gpu.GpuDelegate
 import kotlin.math.abs
+import android.graphics.Canvas
+
+
 
 object GlobalData {
     var isSupportedTofData: Boolean = false
@@ -82,6 +85,13 @@ class LiveCameraActivity : ComponentActivity(),TextToSpeech.OnInitListener {
     private var isListening = false
     private val SPEECH_REQUEST_CODE = 1001
     private lateinit var objectSpeech: ObjectSpeech
+
+
+    private var lastImageProcessingTime: Long = 0
+    private var lastInferenceTime: Long = 0
+
+    private val rotationMatrix = Matrix().apply { postRotate(90f) }
+    private var rotatedBitmap: Bitmap? = null
 
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -241,15 +251,21 @@ class LiveCameraActivity : ComponentActivity(),TextToSpeech.OnInitListener {
                 val latency = endTime - startTime
                 Log.d("RegularCamera", "Bitmap processing latency: $latency ms")
             }
-            setupToFCamera { depthData ->
-                val startTime = System.currentTimeMillis()
-                tofDepthData = depthData
-                isTofDepthDataReady = true
-                tryRunYolox()
-                val  endTime = System.currentTimeMillis()
-                val latency = endTime - startTime
-                Log.d("TOFDepthData", "Retreiving depth data latency: $latency ms")
+
+
+            if (GlobalData.isSupportedTofData) {
+                setupToFCamera { depthData ->
+                    val startTime = System.currentTimeMillis()
+                    tofDepthData = depthData
+                    isTofDepthDataReady = true
+                    tryRunYolox()
+                    val endTime = System.currentTimeMillis()
+                    val latency = endTime - startTime
+                    Log.d("TimeLog", "LiveCamera Activity: Depth data setup latency: $latency ms")
+                }
             }
+
+
         } catch (e: Exception) {
             Log.e("CameraSetup", "Error in setupCamera: ${e.message}", e)
         }
@@ -257,28 +273,47 @@ class LiveCameraActivity : ComponentActivity(),TextToSpeech.OnInitListener {
 
     private fun tryRunYolox() {
         if (isRegularBitmapReady && regularBitmap != null) {
-            var startTime = System.currentTimeMillis()
-            val (outputs, imgInfo) = predictor.inference(regularBitmap!!)
-            var endTime = System.currentTimeMillis()
-            var latency = endTime - startTime
-            Log.d("YoloxInference", "Inference latency: $latency ms")
-
-            startTime = System.currentTimeMillis()
-            val resultBitmap = predictor.visual(outputs, imgInfo, predictor.confThre)
-            endTime = System.currentTimeMillis()
-            latency = endTime - startTime
-            Log.d("YoloxInference", "Visualizing inference latency: $latency ms")
-            speakFirstDetection(outputs,tofDepthData)
-            runOnUiThread {
-                imageView.setImageBitmap(resultBitmap)
+            // Log interval between inferences
+            val currentTime = System.currentTimeMillis()
+            if (lastInferenceTime != 0L) {
+                val interval = currentTime - lastInferenceTime
+                Log.d("TimeLog", "LiveCamera Activity: Time between inferences: $interval ms")
             }
-            regularBitmap = null
+            lastInferenceTime = currentTime
 
+            // Inference
+            val startTimeInference = System.currentTimeMillis()
+            val (outputs, imgInfo) = predictor.inference(regularBitmap!!)
+            val endTimeInference = System.currentTimeMillis()
+            val latencyInference = endTimeInference - startTimeInference
+            Log.d("TimeLog", "LiveCamera Activity: Inference latency: $latencyInference ms")
+
+            // Visualization
+            val startTimeVisual = System.currentTimeMillis()
+            val resultBitmap = predictor.visual(outputs, imgInfo, predictor.confThre)
+            val endTimeVisual = System.currentTimeMillis()
+            val latencyVisual = endTimeVisual - startTimeVisual
+            Log.d("TimeLog", "LiveCamera Activity: Visualization latency: $latencyVisual ms")
+
+            speakFirstDetection(outputs, tofDepthData)
+
+            // UI Update
+            runOnUiThread {
+                val startTimeUI = System.currentTimeMillis()
+                imageView.setImageBitmap(resultBitmap)
+                val endTimeUI = System.currentTimeMillis()
+                val latencyUI = endTimeUI - startTimeUI
+                Log.d("TimeLog", "LiveCamera Activity: UI update latency: $latencyUI ms")
+            }
+
+            regularBitmap = null
             tofDepthData = null
             isRegularBitmapReady = false
             isTofDepthDataReady = false
         }
     }
+
+
 
     private fun startBackgroundThread() {
         backgroundThread = HandlerThread("CameraBackground").apply { start() }
@@ -337,14 +372,41 @@ class LiveCameraActivity : ComponentActivity(),TextToSpeech.OnInitListener {
                     )
 
                     cameraImageReader.setOnImageAvailableListener({ reader ->
+                        val startTimeTotal = System.currentTimeMillis()
+
+                        // Log interval between consecutive image captures
+                        val currentTime = System.currentTimeMillis()
+                        if (lastImageProcessingTime != 0L) {
+                            val interval = currentTime - lastImageProcessingTime
+                            Log.d("TimeLog", "LiveCamera Activity: Time between image captures: $interval ms")
+                        }
+                        lastImageProcessingTime = currentTime
+
                         val image = reader.acquireLatestImage()
                         image?.let {
-                            val bitmap = yuvToRgbConverter.yuvToRgb(it) // Convert YUV to Bitmap
-                            val croppedBitmap = cropToSquare(bitmap) // Crop to 1:1 aspect ratio
-                            val rotatedBitmap = rotateBitmap(croppedBitmap, 90f) // Rotate if necessary
+                            // YUV to RGB conversion
+                            val startTimeConversion = System.currentTimeMillis()
+                            val bitmap = yuvToRgbConverter.yuvToRgb(it)
+                            val endTimeConversion = System.currentTimeMillis()
+                            Log.d("TimeLog", "LiveCamera Activity: YUV to RGB conversion latency: ${endTimeConversion - startTimeConversion} ms")
+
+                            // Crop to square
+                            val startTimeCrop = System.currentTimeMillis()
+                            val croppedBitmap = cropToSquare(bitmap)
+                            val endTimeCrop = System.currentTimeMillis()
+                            Log.d("TimeLog", "LiveCamera Activity: Crop to square latency: ${endTimeCrop - startTimeCrop} ms")
+
+                            // Rotate bitmap
+// Rotate bitmap
+                            val startTimeRotate = System.currentTimeMillis()
+                            val rotatedBitmap = rotateBitmap(croppedBitmap)
+                            val endTimeRotate = System.currentTimeMillis()
+                            Log.d("TimeLog", "LiveCamera Activity: Rotate bitmap latency: ${endTimeRotate - startTimeRotate} ms")
                             onImageReady(rotatedBitmap)
                             it.close()
                         }
+                        val endTimeTotal = System.currentTimeMillis()
+                        Log.d("TimeLog", "LiveCamera Activity: Total image processing latency: ${endTimeTotal - startTimeTotal} ms")
                     }, backgroundHandler)
 
                     cameraManager.openCamera(cameraId, object : CameraDevice.StateCallback() {
@@ -383,10 +445,24 @@ class LiveCameraActivity : ComponentActivity(),TextToSpeech.OnInitListener {
         return Bitmap.createBitmap(bitmap, xOffset, yOffset, squareSize, squareSize)
     }
 
-    private fun rotateBitmap(bitmap: Bitmap, degrees: Float): Bitmap {
-        val matrix = Matrix()
-        matrix.postRotate(degrees)
-        return Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
+    private fun rotateBitmap(bitmap: Bitmap): Bitmap {
+        // Reuse bitmap if possible
+        val width = bitmap.width
+        val height = bitmap.height
+
+        if (rotatedBitmap == null || rotatedBitmap?.width != height || rotatedBitmap?.height != width) {
+            // Recycle previous bitmap if it exists but dimensions don't match
+            rotatedBitmap?.recycle()
+            rotatedBitmap = Bitmap.createBitmap(bitmap, 0, 0, width, height, rotationMatrix, false)
+        } else {
+            // Reuse existing bitmap
+            Canvas(rotatedBitmap!!).apply {
+                rotate(90f, height / 2f, width / 2f)
+                drawBitmap(bitmap, 0f, 0f, null)
+            }
+        }
+
+        return rotatedBitmap!!
     }
 
     @RequiresPermission(Manifest.permission.CAMERA)
